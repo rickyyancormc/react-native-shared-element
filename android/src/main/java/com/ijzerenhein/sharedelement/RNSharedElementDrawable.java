@@ -1,6 +1,5 @@
 package com.ijzerenhein.sharedelement;
 
-// import android.util.Log;
 import android.view.View;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -15,7 +14,6 @@ import android.widget.ImageView;
 
 import com.facebook.react.views.image.ReactImageView;
 import com.facebook.react.views.view.ReactViewGroup;
-import com.facebook.react.views.view.ReactViewBackgroundDrawable;
 
 import com.facebook.drawee.generic.GenericDraweeHierarchy;
 import com.facebook.drawee.drawable.ScalingUtils.ScaleType;
@@ -40,15 +38,13 @@ class RNSharedElementDrawable extends Drawable {
     }
   }
 
-  // static final private String LOG_TAG = "RNSharedElementDrawable";
-
   private RNSharedElementContent mContent = null;
   private RNSharedElementStyle mStyle = null;
   private ViewType mViewType = ViewType.NONE;
   private float mPosition = 0;
   private int mAlpha = 255;
   private Path mPathForBorderRadiusOutline = null;
-  private ReactViewBackgroundDrawable mReactViewBackgroundDrawableCache = null;
+  private ReactViewGroup mReactViewGroupCache = null;
 
   RNSharedElementStyle getStyle() {
     return mStyle;
@@ -69,47 +65,38 @@ class RNSharedElementDrawable extends Drawable {
   ) {
     boolean invalidated = false;
 
-    // Update content
     if (mContent != content) {
       mContent = content;
       invalidated = true;
     }
 
-    // Update view-type
     ViewType viewType = (mContent != null) ? RNSharedElementDrawable.getViewType(mContent.view, style) : ViewType.NONE;
     if (mViewType != viewType) {
       mViewType = viewType;
       invalidated = true;
     }
 
-    // Update & check style changes
     if ((mStyle != null) && (style != null) && !invalidated) {
       switch (viewType) {
         case REACTIMAGEVIEW:
         case IMAGEVIEW:
-          //Log.d(LOG_TAG, "drawableChanged, viewType: " + viewType + ", changes: " + mStyle.compare(style));
           invalidated = (mStyle.compare(style) &
                   (RNSharedElementStyle.PROP_BORDER
                           | RNSharedElementStyle.PROP_BACKGROUND_COLOR
                           | RNSharedElementStyle.PROP_SCALETYPE)) != 0;
           break;
         case PLAIN:
-          //Log.d(LOG_TAG, "drawableChanged, viewType: " + viewType + ", changes: " + mStyle.compare(style));
           invalidated = (mStyle.compare(style) &
                   (RNSharedElementStyle.PROP_BORDER
                           | RNSharedElementStyle.PROP_BACKGROUND_COLOR)) != 0;
           break;
         case GENERIC:
-          // nop
           break;
       }
     }
     mStyle = style;
-
-    // Update position
     mPosition = position;
 
-    // Invalidate if necessary
     if (invalidated) {
       invalidateSelf();
     }
@@ -119,14 +106,11 @@ class RNSharedElementDrawable extends Drawable {
 
   @Override
   public int getOpacity() {
-    // This method was deprecated in API level 29.
-    // This method is no longer used in graphics optimizations
     return PixelFormat.TRANSLUCENT;
   }
 
   @Override
   public void setColorFilter(ColorFilter cf) {
-    // do nothing
   }
 
   @Override
@@ -141,7 +125,6 @@ class RNSharedElementDrawable extends Drawable {
     return mAlpha;
   }
 
-  /* Android's elevation implementation requires this to be implemented to know where to draw the shadow. */
   @Override
   public void getOutline(Outline outline) {
     if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.LOLLIPOP) {
@@ -204,7 +187,6 @@ class RNSharedElementDrawable extends Drawable {
 
   @Override
   public void draw(Canvas canvas) {
-    //Log.d(LOG_TAG, "draw, viewType: " + mViewType + ", position: " + mPosition);
     switch (mViewType) {
       case REACTIMAGEVIEW:
         drawReactImageView(canvas);
@@ -222,23 +204,18 @@ class RNSharedElementDrawable extends Drawable {
   }
 
   private void drawReactImageView(Canvas canvas) {
-    // TODO FIX IMAGE STRETCH ISSUE WHEN IMAGE DOESN'T FILL
-    // ENTIRE CANVAS
-
     ReactImageView imageView = (ReactImageView) mContent.view;
     RNSharedElementStyle style = mStyle;
     GenericDraweeHierarchy hierarchy = imageView.getHierarchy();
     Drawable drawable = hierarchy.getTopLevelDrawable();
     if (drawable == null) return;
 
-    // Backup current props
     Rect oldBounds = new Rect(drawable.getBounds());
     ScaleType oldScaleType = hierarchy.getActualImageScaleType();
     RoundingParams oldRoundingParams = hierarchy.getRoundingParams();
-    Drawable oldBackgroundImage = null; //hierarchy.getBackgroundImage();
+    Drawable oldBackgroundImage = null;
     int oldFadeDuration = hierarchy.getFadeDuration();
 
-    // Configure drawable
     drawable.setBounds(getBounds());
     hierarchy.setActualImageScaleType(style.scaleType);
     RoundingParams roundingParams = new RoundingParams();
@@ -255,10 +232,8 @@ class RNSharedElementDrawable extends Drawable {
     hierarchy.setBackgroundImage(null);
     hierarchy.setFadeDuration(0);
 
-    // Draw!
     drawable.draw(canvas);
 
-    // Restore props
     hierarchy.setFadeDuration(oldFadeDuration);
     hierarchy.setBackgroundImage(oldBackgroundImage);
     hierarchy.setRoundingParams(oldRoundingParams);
@@ -272,85 +247,36 @@ class RNSharedElementDrawable extends Drawable {
     Drawable drawable = imageView.getDrawable();
     if (drawable == null) return;
 
-    // Backup current props
     Rect oldBounds = new Rect(drawable.getBounds());
 
-    // Configure drawable
     int width = (int) mContent.size.right;
     int height = (int) mContent.size.bottom;
     drawable.setBounds(0, 0, width, height);
     Matrix matrix = new Matrix();
     style.scaleType.getTransform(matrix, getBounds(), width, height, 0.5f, 0.5f);
 
-    // Draw!
     int saveCount = canvas.save();
     canvas.concat(matrix);
     drawable.draw(canvas);
     canvas.restoreToCount(saveCount);
 
-    // Restore props
     drawable.setBounds(oldBounds);
   }
 
   private void drawPlainView(Canvas canvas) {
     RNSharedElementStyle style = mStyle;
 
-    // Create drawable
-    ReactViewBackgroundDrawable drawable = mReactViewBackgroundDrawableCache;
-    if (drawable == null) {
-      drawable = new ReactViewBackgroundDrawable(mContent.view.getContext());
-      mReactViewBackgroundDrawableCache = drawable;
+    ReactViewGroup viewGroup = mReactViewGroupCache;
+    if (viewGroup == null) {
+      viewGroup = new ReactViewGroup(mContent.view.getContext());
+      mReactViewGroupCache = viewGroup;
     }
-    drawable.setBounds(getBounds());
+    viewGroup.setBackgroundColor(style.backgroundColor);
 
-    // Set background color
-    drawable.setColor(style.backgroundColor);
-
-    // Set border
-    float borderColorRGB = (float) (style.borderColor & 0x00FFFFFF);
-    float borderColorAlpha = (float) (style.borderColor >>> 24);
-    drawable.setBorderStyle(style.borderStyle);
-    for (int i = 0; i < 4; i++) {
-      drawable.setBorderColor(i, borderColorRGB, borderColorAlpha);
-      drawable.setBorderWidth(i, style.borderWidth);
-    }
-    drawable.setRadius(style.borderTopLeftRadius, 0);
-    drawable.setRadius(style.borderTopRightRadius, 1);
-    drawable.setRadius(style.borderBottomRightRadius, 2);
-    drawable.setRadius(style.borderBottomLeftRadius, 3);
-
-    // Draw!
-    drawable.draw(canvas);
+    viewGroup.draw(canvas);
   }
 
   private void drawGenericView(Canvas canvas) {
     mContent.view.draw(canvas);
   }
-
-  /*private void drawGenericScaledCanvas(Canvas canvas) {
-    View view = mContent.view;
-
-    // Save canvas
-    int saveCount = canvas.save();
-
-    // Adjust scale
-    Rect bounds = getBounds();
-    float scaleX = (float) bounds.width() / (float) view.getWidth();
-    float scaleY = (float) bounds.height() / (float) view.getHeight();
-    float scale = 1;
-    if ((scaleX >= 1) && (scaleY >= 1)) {
-      scaleX = Math.min(scaleX, scaleY);
-      scaleY = scaleX;
-    } else if ((scaleX <= 1) && (scaleY <= 1)) {
-      scaleX = Math.max(scaleX, scaleY);
-      scaleY = scaleX;
-    }
-    canvas.scale(scaleX, scaleY);
-
-    // Draw!
-    view.draw(canvas);
-
-    // Restore canvas
-    canvas.restoreToCount(saveCount);
-  }*/
 }
